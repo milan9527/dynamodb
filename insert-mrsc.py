@@ -3,11 +3,10 @@ import time
 import uuid
 import random
 from faker import Faker
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('mrsc')
+table = dynamodb.Table('msrc1')
 
 # Initialize Faker for generating realistic dummy data
 fake = Faker()
@@ -27,29 +26,35 @@ def generate_item():
         'is_active': random.choice([True, False])
     }
 
-# Function to write a single item
+# Function to write a single item and return the time taken
 def write_item():
     item = generate_item()
+    start_time = time.time()
     table.put_item(Item=item)
+    end_time = time.time()
+    return end_time - start_time
 
 # Main function
 def main():
     start_time = time.time()
 
-    total_items = 40000
+    total_items = 1000
+    total_write_time = 0
 
-    # Use ThreadPoolExecutor for parallel execution
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(write_item) for _ in range(total_items)]
-        
-        # Wait for all futures to complete
-        for future in as_completed(futures):
-            future.result()
+    # Process items sequentially
+    for _ in range(total_items):
+        write_time = write_item()
+        total_write_time += write_time
 
     end_time = time.time()
     execution_time = end_time - start_time
 
-    print(f"Execution time: {execution_time:.2f} seconds")
+    # Calculate average response time
+    average_response_time = total_write_time / total_items
+
+    print(f"Total execution time: {execution_time:.2f} seconds")
+    print(f"Total write time: {total_write_time:.2f} seconds")
+    print(f"Average response time: {average_response_time:.4f} seconds")
     print(f"Total items written: {total_items}")
 
 if __name__ == "__main__":
