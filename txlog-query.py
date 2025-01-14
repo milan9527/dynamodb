@@ -16,39 +16,43 @@ def query_items():
     try:
         start_time = time.time()
         items = []
+        last_evaluated_key = None
 
-        response = table.query(
-            IndexName='volume-index',
-            KeyConditionExpression=Key('account_address').eq(account_address) & Key('volume').gte(volume_threshold),
-            FilterExpression=Attr('event_type').is_in(event_types),
-            ScanIndexForward=False  # This will sort volume in descending order
-        )
+        while len(items) < limit:
+            # Query parameters
+            query_params = {
+                'KeyConditionExpression': Key('account_address').eq(account_address),
+                'FilterExpression': Attr('event_type').is_in(event_types) & Attr('volume').gte(volume_threshold),
+                'ScanIndexForward': False,  # This will sort block_number in descending order
+                'Limit': limit  # This limits the items per query, not the final result
+            }
 
-        items.extend(response['Items'])
+            if last_evaluated_key:
+                query_params['ExclusiveStartKey'] = last_evaluated_key
 
-        # Continue querying if there are more results and we haven't reached 100 items
-        while 'LastEvaluatedKey' in response and len(items) < limit:
-            response = table.query(
-                IndexName='volume-index',
-                KeyConditionExpression=Key('account_address').eq(account_address) & Key('volume').gte(volume_threshold),
-                FilterExpression=Attr('event_type').is_in(event_types),
-                ScanIndexForward=False,
-                ExclusiveStartKey=response['LastEvaluatedKey']
-            )
+            response = table.query(**query_params)
             items.extend(response['Items'])
 
-        # Sort the items by block_number and event_id in descending order
-        sorted_items = sorted(items, 
-                              key=lambda x: (int(x['block_number']), x['event_id']), 
-                              reverse=True)
+            # If there are no more items to query, break the loop
+            if 'LastEvaluatedKey' not in response:
+                break
 
-        # Limit to 100 items after sorting
-        final_items = sorted_items[:limit]
+            last_evaluated_key = response['LastEvaluatedKey']
+
+            # Break if we have enough items
+            if len(items) >= limit:
+                break
+
+        # Sort items by block_number (desc) and then by event_id (desc)
+        items.sort(key=lambda x: (-int(x['block_number']), -int(x['event_id'])))
+
+        # Ensure we only return 'limit' number of items
+        items = items[:limit]
 
         end_time = time.time()
         execution_time = end_time - start_time
 
-        return final_items, execution_time
+        return items, execution_time
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
@@ -61,4 +65,4 @@ if __name__ == "__main__":
     print(f"Execution time: {execution_time:.2f} seconds")
     
     for item in items:
-        print(item)
+        print(f"Block Number: {item['block_number']}, Event ID: {item['event_id']}, Event Type: {item['event_type']}, Volume: {item['volume']}")
