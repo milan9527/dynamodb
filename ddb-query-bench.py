@@ -1,5 +1,4 @@
 import boto3
-from boto3.dynamodb.conditions import Key
 import time
 import random
 from concurrent.futures import ThreadPoolExecutor
@@ -8,6 +7,7 @@ import threading
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 table = dynamodb.Table('mvdemo1')
+client = boto3.client('dynamodb', region_name='us-east-1')
 
 # List to hold oneids
 oneids = []
@@ -45,19 +45,19 @@ def scan_table(target_size=1000000):
 
 def query_batch(batch_size=100):
     global total_queries, total_items, total_errors
-    batch = random.choices(oneids, k=batch_size)
+    batch = random.sample(oneids, min(batch_size, len(oneids)))
     try:
-        with table.batch_get_item(
+        response = client.batch_get_item(
             RequestItems={
                 table.name: {
-                    'Keys': [{'oneid': oneid} for oneid in batch],
+                    'Keys': [{'oneid': {'S': oneid}} for oneid in batch],
                     'ProjectionExpression': 'oneid'
                 }
             }
-        ) as response:
-            with lock:
-                total_queries += len(batch)
-                total_items += len(response['Responses'][table.name])
+        )
+        with lock:
+            total_queries += len(batch)
+            total_items += len(response['Responses'][table.name])
     except Exception as e:
         with lock:
             total_errors += len(batch)
