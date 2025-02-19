@@ -88,7 +88,7 @@ if not items:
 # Run benchmark
 print("Starting benchmark...")
 num_threads = 2000  # Adjust based on your needs
-duration = 120  # 10 minutes
+duration = 600  # 10 minutes
 
 start_time = time.time()
 run_benchmark(duration, num_threads)
