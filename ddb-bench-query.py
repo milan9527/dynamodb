@@ -34,8 +34,6 @@ def scan_table(target_size=1000000):
         oneids.extend([item['oneid'] for item in response['Items']])
         last_evaluated_key = response.get('LastEvaluatedKey')
 
-        print(f"Scanned {len(oneids)} oneids")
-
         if not last_evaluated_key:
             break
 
