@@ -1,14 +1,13 @@
 import boto3
-from boto3.dynamodb.conditions import Key
-import threading
 import time
 import random
-from queue import Queue
 from concurrent.futures import ThreadPoolExecutor
+import threading
 
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 table = dynamodb.Table('mvdemo1')
+client = boto3.client('dynamodb', region_name='us-east-1')
 
 # List to hold oneids
 oneids = []
@@ -19,11 +18,7 @@ total_items = 0
 total_errors = 0
 lock = threading.Lock()
 
-# Flag to signal threads to stop
-stop_flag = threading.Event()
-
-# Function to scan the table and populate the oneids list
-def scan_table(target_size=100000):
+def scan_table(target_size=1000000):
     print("Scanning table...")
     scan_kwargs = {
         'ProjectionExpression': 'oneid',
@@ -44,31 +39,37 @@ def scan_table(target_size=100000):
         if not last_evaluated_key:
             break
 
-        time.sleep(0.1)  # Small delay to reduce throttling
-
     # Remove duplicates while preserving order
     oneids[:] = list(dict.fromkeys(oneids))
     print(f"Scan complete. Total unique oneids: {len(oneids)}")
 
-# Function to query the table
-def query_table():
+def query_batch(batch_size=100):
     global total_queries, total_items, total_errors
-    while not stop_flag.is_set():
-        oneid = random.choice(oneids)
-        try:
-            response = table.query(
-                KeyConditionExpression=Key('oneid').eq(oneid)
-            )
-            with lock:
-                total_queries += 1
-                total_items += len(response['Items'])
-        except Exception as e:
-            with lock:
-                total_errors += 1
-            print(f"Error querying oneid {oneid}: {str(e)}")
+    batch = random.sample(oneids, min(batch_size, len(oneids)))
+    try:
+        response = client.batch_get_item(
+            RequestItems={
+                table.name: {
+                    'Keys': [{'oneid': {'S': oneid}} for oneid in batch],
+                    'ProjectionExpression': 'oneid'
+                }
+            }
+        )
+        with lock:
+            total_queries += len(batch)
+            total_items += len(response['Responses'][table.name])
+    except Exception as e:
+        with lock:
+            total_errors += len(batch)
+        print(f"Error in batch query: {str(e)}")
 
-# Number of threads
-num_threads = 100  # Increased from 40
+def run_benchmark(duration, num_threads):
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        end_time = time.time() + duration
+        while time.time() < end_time:
+            futures = [executor.submit(query_batch) for _ in range(num_threads)]
+            for future in futures:
+                future.result()
 
 # Scan the table first
 scan_table()
@@ -77,21 +78,13 @@ if not oneids:
     print("No oneids found. Exiting.")
     exit()
 
-# Create and start threads using ThreadPoolExecutor
+# Run benchmark
+print("Starting benchmark...")
+num_threads = 200  # Adjust based on your needs
+duration = 600  # 10 minutes
+
 start_time = time.time()
-with ThreadPoolExecutor(max_workers=num_threads) as executor:
-    futures = [executor.submit(query_table) for _ in range(num_threads)]
-
-    # Run for 10 minutes
-    time.sleep(600)
-
-    # Signal threads to stop
-    stop_flag.set()
-
-    # Wait for all threads to complete
-    for future in futures:
-        future.result()
-
+run_benchmark(duration, num_threads)
 end_time = time.time()
 
 # Calculate and print results
