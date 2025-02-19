@@ -3,14 +3,15 @@ import time
 import random
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import queue
 
 # Initialize DynamoDB client
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 table = dynamodb.Table('mvdemo1')
 client = boto3.client('dynamodb', region_name='us-east-1')
 
-# List to hold oneids
-oneids = []
+# Queue to hold oneids
+oneid_queue = queue.Queue()
 
 # Shared variables for tracking total queries and items
 total_queries = 0
@@ -25,27 +26,35 @@ def scan_table(target_size=1000000):
         'Limit': 1000
     }
     last_evaluated_key = None
+    scanned_count = 0
 
-    while len(oneids) < target_size:
+    while scanned_count < target_size:
         if last_evaluated_key:
             scan_kwargs['ExclusiveStartKey'] = last_evaluated_key
-        
+
         response = table.scan(**scan_kwargs)
-        oneids.extend([item['oneid'] for item in response['Items']])
+        for item in response['Items']:
+            oneid_queue.put(item['oneid'])
+        scanned_count += len(response['Items'])
         last_evaluated_key = response.get('LastEvaluatedKey')
-        
-        print(f"Scanned {len(oneids)} oneids")
-        
+
         if not last_evaluated_key:
             break
 
-    # Remove duplicates while preserving order
-    oneids[:] = list(dict.fromkeys(oneids))
-    print(f"Scan complete. Total unique oneids: {len(oneids)}")
+    print(f"Scan complete. Total oneids: {scanned_count}")
 
 def query_batch(batch_size=100):
     global total_queries, total_items, total_errors
-    batch = random.sample(oneids, min(batch_size, len(oneids)))
+    batch = []
+    for _ in range(batch_size):
+        try:
+            batch.append(oneid_queue.get_nowait())
+        except queue.Empty:
+            break
+
+    if not batch:
+        return
+
     try:
         response = client.batch_get_item(
             RequestItems={
@@ -63,18 +72,23 @@ def query_batch(batch_size=100):
             total_errors += len(batch)
         print(f"Error in batch query: {str(e)}")
 
+def worker(stop_event):
+    while not stop_event.is_set():
+        query_batch()
+
 def run_benchmark(duration, num_threads):
+    stop_event = threading.Event()
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        end_time = time.time() + duration
-        while time.time() < end_time:
-            futures = [executor.submit(query_batch) for _ in range(num_threads)]
-            for future in futures:
-                future.result()
+        futures = [executor.submit(worker, stop_event) for _ in range(num_threads)]
+        time.sleep(duration)
+        stop_event.set()
+        for future in futures:
+            future.result()
 
 # Scan the table first
 scan_table()
 
-if not oneids:
+if oneid_queue.empty():
     print("No oneids found. Exiting.")
     exit()
 
