@@ -24,13 +24,6 @@ class MapBulkLoader:
         longitude = round(random.uniform(-180, 180), 6)
         return f"{latitude},{longitude}"
 
-    def generate_random_version(self):
-        """Generate a random version number in format X.Y.Z"""
-        major = random.randint(1, 10)
-        minor = random.randint(0, 99)
-        patch = random.randint(0, 999)
-        return f"{major}.{minor}.{patch}"
-
     def generate_random_map_element(self, index):
         """Generate a random map element with realistic data including multiple versions"""
         # Define possible values for each attribute
@@ -59,8 +52,8 @@ class MapBulkLoader:
         # Generate multiple versions of the element
         versions = []
         for v_idx in range(num_versions):
-            # Generate random version string instead of sequential
-            version_num = self.generate_random_version()
+            # Generate random version as integer between 1 and 100
+            version_num = random.randint(1, 100)
 
             # Each version has its own timestamp, status, attitude, and geolocation
             version_timestamp = base_timestamp - (num_versions - v_idx) * 86400000  # 1 day earlier per version
