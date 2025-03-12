@@ -52,8 +52,8 @@ class MapBulkLoader:
         # Generate multiple versions of the element
         versions = []
         for v_idx in range(num_versions):
-            # Generate random version as integer between 1 and 100
-            version_num = random.randint(1, 100)
+            # Generate random version as integer between 1 and 100, but store as string
+            version_num = str(random.randint(1, 100))
 
             # Each version has its own timestamp, status, attitude, and geolocation
             version_timestamp = base_timestamp - (num_versions - v_idx) * 86400000  # 1 day earlier per version
@@ -65,7 +65,7 @@ class MapBulkLoader:
                 'ele': ele_id,
                 'timestamp': version_timestamp,
                 'block': block,
-                'version': version_num,
+                'version': version_num,  # Now a string
                 'status': status,
                 'attitude': attitude,
                 'geolocation': geolocation
@@ -104,13 +104,12 @@ class MapBulkLoader:
                 retry_count += 1
 
             except ClientError as e:
-                if e.response['Error']['Code'] == 'ProvisionedThroughputExceededException':
-                    # Exponential backoff for throughput exceptions
-                    wait_time = (2 ** retry_count) * 100
-                    time.sleep(wait_time / 1000.0)
-                    retry_count += 1
-                else:
-                    print(f"Error in batch write: {e}")
+                print(f"Error in batch write: {e}")
+                # Exponential backoff for any client errors
+                wait_time = (2 ** retry_count) * 100
+                time.sleep(wait_time / 1000.0)
+                retry_count += 1
+                if retry_count >= max_retries:
                     return False
 
         print(f"Failed to write {len(items_batch)} items after {max_retries} retries")
