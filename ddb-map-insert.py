@@ -4,7 +4,6 @@ import random
 import uuid
 from botocore.exceptions import ClientError
 from concurrent.futures import ThreadPoolExecutor
-import math
 
 class MapBulkLoader:
     """Class to handle bulk loading of map elements into DynamoDB"""
@@ -173,32 +172,6 @@ class MapBulkLoader:
         print(f"Insertion rate: {items_per_second:.2f} items per second")
         
         return (success_count * batch_size, failure_count * batch_size)
-    
-    def insert_bulk_data_with_table_monitoring(self, count=10000, batch_size=25, max_workers=10):
-        """Insert bulk data while monitoring table capacity"""
-        # Get table description to check if it's on-demand or provisioned
-        client = boto3.client('dynamodb', region_name='us-east-1')
-        table_desc = client.describe_table(TableName=self.table_name)['Table']
-        
-        billing_mode = table_desc.get('BillingModeSummary', {}).get('BillingMode', 'PROVISIONED')
-        
-        if billing_mode == 'PROVISIONED':
-            print("Table is using PROVISIONED capacity. Consider switching to PAY_PER_REQUEST for bulk loading.")
-            write_capacity = table_desc['ProvisionedThroughput']['WriteCapacityUnits']
-            print(f"Current write capacity: {write_capacity} WCU")
-            
-            # Adjust batch size and workers based on provisioned capacity
-            recommended_items_per_second = write_capacity * 0.8  # Use 80% of capacity
-            recommended_batch_size = min(25, max(1, int(recommended_items_per_second / max_workers)))
-            
-            print(f"Recommended batch size: {recommended_batch_size}")
-            if recommended_batch_size < batch_size:
-                print(f"Adjusting batch size from {batch_size} to {recommended_batch_size}")
-                batch_size = recommended_batch_size
-        else:
-            print("Table is using on-demand capacity (PAY_PER_REQUEST).")
-        
-        return self.insert_bulk_data(count, batch_size, max_workers)
 
 
 def main():
@@ -218,7 +191,7 @@ def main():
     loader = MapBulkLoader(region=args.region, table_name=args.table)
     
     # Insert the data
-    loader.insert_bulk_data_with_table_monitoring(
+    loader.insert_bulk_data(
         count=args.count,
         batch_size=min(25, args.batch_size),  # Ensure batch size doesn't exceed 25
         max_workers=args.workers
