@@ -84,16 +84,20 @@ def create_table(dynamodb_client):
         print(f"Error creating table: {e}")
         raise e
 
-def generate_random_item(element_id, column_id, version, base_timestamp):
+def get_timestamp_ms():
+    """Get current timestamp in milliseconds"""
+    return int(datetime.now().timestamp() * 1000)
+
+def generate_random_item(element_id, column_id, version, base_timestamp_ms):
     """Generate a random item for the DynamoDB table"""
     element_col_id = f"ele{element_id}#col{column_id}"
     
     block_id = f"block{random.randint(1, NUM_BLOCKS)}"
     status = random.choice(STATUS_VALUES)
     
-    # Each version is at least 1 second newer than the previous one
+    # Each version is at least 1 millisecond newer than the previous one
     # to ensure unique timestamps for the same element_col_id
-    timestamp = base_timestamp + version
+    timestamp_ms = base_timestamp_ms + version
     
     # Generate random geo location
     latitude = Decimal(str(random.uniform(24.0, 49.0)))  # US latitude range
@@ -102,7 +106,7 @@ def generate_random_item(element_id, column_id, version, base_timestamp):
     # Create the item
     item = {
         'element_col_id': element_col_id,
-        'timestamp': timestamp,
+        'timestamp': timestamp_ms,  # Millisecond precision
         'block_id': block_id,
         'status': status,
         'geo_location': {
@@ -146,7 +150,7 @@ def insert_items(dynamodb_resource):
                 # Generate a base timestamp for this element-column combination
                 # Base timestamp is between 1-365 days ago to spread data over a year
                 base_days_ago = random.randint(1, 365)
-                base_timestamp = int((datetime.now() - timedelta(days=base_days_ago)).timestamp())
+                base_timestamp_ms = int((datetime.now() - timedelta(days=base_days_ago)).timestamp() * 1000)
                 
                 # Calculate versions needed for this element-column
                 # Add some randomness but ensure we'll reach our target
@@ -160,7 +164,7 @@ def insert_items(dynamodb_resource):
                     if items_inserted >= TOTAL_ITEMS:
                         break
                         
-                    item = generate_random_item(element_id, column_id, version, base_timestamp)
+                    item = generate_random_item(element_id, column_id, version, base_timestamp_ms)
                     batch_items.append(item)
                     items_inserted += 1
                     
