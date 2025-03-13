@@ -9,11 +9,11 @@ from botocore.exceptions import ClientError
 # Constants
 TABLE_NAME = 'ElementGeoLocationData'
 TOTAL_ITEMS = 100000  # 100,000 items total
-NUM_ELEMENTS = 100    # Approximately 100 elements
+NUM_ELEMENTS = 100    # Exactly 100 elements
 NUM_BLOCKS = 50
 STATUS_VALUES = ['ACTIVE', 'INACTIVE', 'MAINTENANCE', 'PENDING']
 COLUMNS_PER_ELEMENT = 5  # Each element has exactly 5 columns
-VERSIONS_PER_ELEMENT_COLUMN = 200  # Increased to get ~100,000 items from 100 elements with 5 columns each
+VERSIONS_PER_ELEMENT_COLUMN = 200  # ~200 versions per element-column to reach 100,000 items
 
 def create_table(dynamodb_client):
     """Create the DynamoDB table with the specified schema using on-demand capacity"""
@@ -84,10 +84,6 @@ def create_table(dynamodb_client):
         print(f"Error creating table: {e}")
         raise e
 
-def get_timestamp_ms():
-    """Get current timestamp in milliseconds"""
-    return int(datetime.now().timestamp() * 1000)
-
 def generate_random_item(element_id, column_id, version, base_timestamp_ms):
     """Generate a random item for the DynamoDB table"""
     element_col_id = f"ele{element_id}#col{column_id}"
@@ -143,7 +139,15 @@ def insert_items(dynamodb_resource):
         start_time = time.time()
         last_progress_time = start_time
         
-        # Create a distribution of versions across elements to reach our target
+        # Calculate versions per element-column to distribute evenly
+        # Ensure we create exactly 5 columns for each element
+        versions_per_combo = TOTAL_ITEMS // (NUM_ELEMENTS * COLUMNS_PER_ELEMENT)
+        remaining_items = TOTAL_ITEMS % (NUM_ELEMENTS * COLUMNS_PER_ELEMENT)
+        
+        print(f"Creating {NUM_ELEMENTS} elements, each with {COLUMNS_PER_ELEMENT} columns")
+        print(f"Each element-column will have approximately {versions_per_combo} versions")
+        
+        # Create items for each element
         for element_id in range(1, NUM_ELEMENTS + 1):
             # Each element has exactly 5 columns
             for column_id in range(1, COLUMNS_PER_ELEMENT + 1):
@@ -152,18 +156,16 @@ def insert_items(dynamodb_resource):
                 base_days_ago = random.randint(1, 365)
                 base_timestamp_ms = int((datetime.now() - timedelta(days=base_days_ago)).timestamp() * 1000)
                 
-                # Calculate versions needed for this element-column
-                # Add some randomness but ensure we'll reach our target
-                versions_for_this_combo = max(1, int(random.gauss(VERSIONS_PER_ELEMENT_COLUMN, 20)))
+                # Determine versions for this element-column
+                current_versions = versions_per_combo
+                if remaining_items > 0:
+                    current_versions += 1
+                    remaining_items -= 1
                 
                 # Process versions in smaller chunks to avoid memory issues
                 batch_items = []
                 
-                for version in range(versions_for_this_combo):
-                    # Stop if we've reached the total
-                    if items_inserted >= TOTAL_ITEMS:
-                        break
-                        
+                for version in range(current_versions):
                     item = generate_random_item(element_id, column_id, version, base_timestamp_ms)
                     batch_items.append(item)
                     items_inserted += 1
@@ -197,16 +199,11 @@ def insert_items(dynamodb_resource):
                         items_per_second = items_inserted / elapsed if elapsed > 0 else 0
                         print(f"Inserted {items_inserted} items... ({items_per_second:.2f} items/sec, {items_inserted/TOTAL_ITEMS*100:.1f}%)")
                         last_progress_time = current_time
-                
-                if items_inserted >= TOTAL_ITEMS:
-                    break
-            
-            if items_inserted >= TOTAL_ITEMS:
-                break
         
         total_time = time.time() - start_time
         print(f"Successfully inserted {items_inserted} items in {total_time:.2f} seconds.")
         print(f"Average throughput: {items_inserted / total_time:.2f} items/second.")
+        print(f"Created {NUM_ELEMENTS} elements, each with {COLUMNS_PER_ELEMENT} columns.")
         
     except ClientError as e:
         print(f"Error inserting items: {e}")
