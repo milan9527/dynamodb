@@ -95,7 +95,7 @@ class MapDynamoDBQuery:
             logger.info(f"Query completed in {elapsed_time:.2f} seconds")
             logger.info(f"Found {len(final_results)} unique elements with their latest versions")
 
-            return final_results
+            return final_results, elapsed_time
 
         except Exception as e:
             logger.error(f"Error querying latest element versions: {e}")
@@ -157,7 +157,7 @@ class MapDynamoDBQuery:
             logger.info(f"Processed {total_items_processed} total items")
             logger.info(f"Found {len(final_results)} unique elements with their latest versions")
 
-            return final_results
+            return final_results, elapsed_time
 
         except Exception as e:
             logger.error(f"Error in optimized query for latest element versions: {e}")
@@ -172,7 +172,9 @@ def main():
     max_tsver = 1742218602132
 
     # Get latest element versions using the optimized method
-    results = query_manager.get_latest_element_versions_optimized(tile, max_tsver)
+    start_time = time.time()
+    results, query_time = query_manager.get_latest_element_versions_optimized(tile, max_tsver)
+    total_time = time.time() - start_time
 
     # Print results
     print(f"\nLatest versions of elements in tile {tile} with tsver <= {max_tsver}:")
@@ -184,6 +186,11 @@ def main():
 
     if len(results) > 10:
         print(f"... and {len(results) - 10} more elements")
+    
+    # Print execution time
+    print(f"\nExecution time details:")
+    print(f"  DynamoDB query time: {query_time:.2f} seconds")
+    print(f"  Total execution time: {total_time:.2f} seconds")
 
 if __name__ == "__main__":
     main()
